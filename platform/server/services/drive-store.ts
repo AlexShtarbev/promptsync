@@ -35,15 +35,17 @@ export interface DriveApi {
   downloadText(fileId: string): Promise<string>;
 }
 
-// Extensions the parser actually reads as text. Everything else is a presence marker.
-const TEXT_EXTS = new Set([".md", ".yaml", ".yml", ".json", ".tsv", ".txt"]);
+// Extensions the parser actually reads as text. Everything else is a presence marker
+// (snapshot) / a binary asset (push). Shared so the loader and the git→Drive push agree
+// on exactly which files are "authored text".
+export const TEXT_EXTS = new Set([".md", ".yaml", ".yml", ".json", ".tsv", ".txt"]);
 
-function extOf(name: string): string {
+export function extOf(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot === -1 ? "" : name.slice(dot).toLowerCase();
 }
 
-function isTextFile(name: string): boolean {
+export function isTextFile(name: string): boolean {
   return TEXT_EXTS.has(extOf(name));
 }
 
