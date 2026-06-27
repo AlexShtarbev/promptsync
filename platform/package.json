@@ -14,6 +14,7 @@
     "compile": "tsx scripts/compile-shot.ts",
     "assemble": "tsx scripts/assemble-shot.ts",
     "sync-board": "tsx scripts/sync-board.ts",
+    "drive-auth": "tsx scripts/drive-auth.ts",
     "push-drive": "tsx scripts/push-drive.ts",
     "emit": "tsx scripts/emit.ts",
     "check-images": "tsx scripts/check-images.ts",
