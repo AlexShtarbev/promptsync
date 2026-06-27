@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 340px;
+      font-family: "Inter", system-ui, sans-serif;
+      font-size: 13px;
+      background: #0f0f0f;
+      color: #e5e5e5;
+    }
+    .header {
+      padding: 10px 14px;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #1a1a1a;
+    }
+    .header h1 { font-size: 14px; font-weight: 600; }
+    .status {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 999px;
+    }
+    .status.ok { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .status.err { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .section { padding: 10px 14px; }
+    .section + .section { border-top: 1px solid #2a2a2a; }
+    label { display: block; font-size: 11px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    select, input {
+      width: 100%;
+      background: #1a1a1a;
+      color: #e5e5e5;
+      border: 1px solid #2a2a2a;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    select:focus, input:focus { outline: none; border-color: #8b5cf6; }
+    .shot-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .shot-row input { flex: 1; }
+    .btn {
+      background: #6d28d9;
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #8b5cf6; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn.copy { background: #2a2a2a; }
+    .btn.copy:hover { background: #333; }
+    .preview {
+      margin-top: 8px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 11px;
+      max-height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "JetBrains Mono", monospace;
+      color: #aaa;
+      line-height: 1.5;
+    }
+    .shot-info {
+      margin-top: 6px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: #2a2a2a;
+      color: #888;
+    }
+    .tag.kling { background: rgba(139,92,246,0.2); color: #8b5cf6; }
+    .tag.still { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .shortcut {
+      font-size: 10px;
+      color: #555;
+      text-align: center;
+      padding: 6px;
+    }
+    .shortcut kbd {
+      background: #222;
+      padding: 1px 4px;
+      border-radius: 3px;
+      border: 1px solid #333;
+      font-family: monospace;
+    }
+    #shot-list {
+      margin-top: 4px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .shot-option {
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 3px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .shot-option:hover { background: #222; }
+    .shot-option .code { font-weight: 600; font-family: monospace; }
+    .shot-option .setting { color: #666; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>PromptSync</h1>
+    <span id="server-status" class="status err">Offline</span>
+  </div>
+
+  <div class="section">
+    <label>Project</label>
+    <select id="project-select" disabled>
+      <option value="">Loading...</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Shot</label>
+    <input id="shot-input" type="text" placeholder="Type shot code (e.g. 1A)" disabled />
+    <div id="shot-list"></div>
+    <div class="shot-row">
+      <button id="inject-btn" class="btn" disabled>Inject</button>
+      <button id="copy-btn" class="btn copy" disabled>Copy</button>
+    </div>
+    <div id="shot-info" class="shot-info"></div>
+  </div>
+
+  <div id="preview-section" class="section" style="display:none">
+    <label>Preview</label>
+    <div id="preview" class="preview"></div>
+  </div>
+
+  <div class="shortcut"><kbd>Ctrl+Shift+Right</kbd> inject next shot</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

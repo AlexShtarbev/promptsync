@@ -1,0 +1,10 @@
+services:
+  promptsync:
+    build: .
+    ports:
+      - "3456:3456"
+    volumes:
+      - ../projects:/projects
+    environment:
+      - PROJECTS_DIR=/projects
+      - CHOKIDAR_USEPOLLING=true

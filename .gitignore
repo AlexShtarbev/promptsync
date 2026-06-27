@@ -1,0 +1,34 @@
+# Dependencies / build output
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Secrets — Google OAuth client + tokens (kept locally, never tracked)
+google_creds/
+*creds*.json
+*token*.json
+outh*.json
+
+# Local databases / sqlite
+*.db
+*.sqlite
+*.sqlite3
+
+# Runtime data written into project roots (matched at any depth)
+.promptsync-monitor.json
+.promptsync-captures.json
+*.autoemit.json
+
+# Environment / local overrides
+.env
+.env.*
+*.local
+
+# Editor / OS
+.DS_Store
+*.log
+
+# Claude local (machine-specific)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

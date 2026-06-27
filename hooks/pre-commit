@@ -1,0 +1,10 @@
+#!/bin/sh
+# Identity guard: this is the PERSONAL promptsync repo. Refuse to commit under
+# any identity other than the personal gmail, so the work email can never leak.
+expected="alex.shtarbev@gmail.com"
+actual="$(git config user.email)"
+if [ "$actual" != "$expected" ]; then
+	echo "✋ commit blocked: git user.email is '$actual', expected '$expected'." >&2
+	echo "   Fix your identity (includeIf should set it automatically) before committing." >&2
+	exit 1
+fi

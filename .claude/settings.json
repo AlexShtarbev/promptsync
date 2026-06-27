@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/saleksandar/src/story-saint/platform && npx tsx scripts/claude-hook.ts 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}

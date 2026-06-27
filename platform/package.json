@@ -1,0 +1,53 @@
+{
+  "name": "promptsync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "PROJECTS_DIR=\"$HOME/src/otto-and-pip:$HOME/personal/promptsync:$HOME/src/crawler:$HOME/src/drift-v2\" tsx watch server/index.ts",
+    "dev:client": "vite",
+    "build": "tsc && vite build",
+    "import": "tsx scripts/import-storyboard.ts",
+    "structure": "tsx scripts/structure.ts",
+    "lint:continuity": "tsx scripts/lint-continuity.ts",
+    "compile": "tsx scripts/compile-shot.ts",
+    "assemble": "tsx scripts/assemble-shot.ts",
+    "sync-board": "tsx scripts/sync-board.ts",
+    "emit": "tsx scripts/emit.ts",
+    "check-images": "tsx scripts/check-images.ts",
+    "test": "tsx --test 'src/**/*.test.ts' 'server/**/*.test.ts' 'scripts/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@remotion/player": "^4.0.478",
+    "better-sqlite3": "^12.9.0",
+    "chokidar": "^5.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "glob": "^13.0.6",
+    "googleapis": "^171.4.0",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.1",
+    "papaparse": "^5.5.3",
+    "remotion": "^4.0.478",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.6.2",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.11"
+  }
+}
