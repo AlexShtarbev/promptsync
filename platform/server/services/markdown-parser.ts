@@ -1,7 +1,6 @@
-import fs from "fs";
 import path from "path";
-import { glob } from "glob";
 import yaml from "js-yaml";
+import { fileStore, type DirEntry } from "./file-store.js";
 import type {
   Shot,
   ShotMeta,
@@ -151,8 +150,8 @@ export function safeMatter(raw: string): { data: Record<string, unknown>; conten
 }
 
 function readMdFile(filePath: string): { data: Record<string, unknown>; body: string; sections: Record<string, string> } | null {
-  if (!fs.existsSync(filePath)) return null;
-  const raw = fs.readFileSync(filePath, "utf-8");
+  if (!fileStore().exists(filePath)) return null;
+  const raw = fileStore().readText(filePath);
   const { data, content } = safeMatter(raw);
   return { data, body: content.trim(), sections: parseSections(content) };
 }
@@ -161,12 +160,12 @@ const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".webp"];
 const VIDEO_EXTS = [".mp4", ".webm", ".mov"];
 
 function findImage(dir: string): string | null {
-  if (!fs.existsSync(dir)) return null;
+  if (!fileStore().exists(dir)) return null;
   for (const ext of IMAGE_EXTS) {
     const p = path.join(dir, `image${ext}`);
-    if (fs.existsSync(p)) return p;
+    if (fileStore().exists(p)) return p;
   }
-  const files = fs.readdirSync(dir);
+  const files = fileStore().readDir(dir).map((e) => e.name);
   for (const f of files) {
     if (IMAGE_EXTS.some((ext) => f.toLowerCase().endsWith(ext))) {
       return path.join(dir, f);
@@ -176,10 +175,10 @@ function findImage(dir: string): string | null {
 }
 
 function findStartFrame(dir: string): string | null {
-  if (!fs.existsSync(dir)) return null;
+  if (!fileStore().exists(dir)) return null;
   for (const ext of IMAGE_EXTS) {
     const p = path.join(dir, `start-frame${ext}`);
-    if (fs.existsSync(p)) return p;
+    if (fileStore().exists(p)) return p;
   }
   return null;
 }
@@ -187,9 +186,9 @@ function findStartFrame(dir: string): string | null {
 function findOpenartRef(dir: string, prefix?: string): string | null {
   const filename = prefix ? `${prefix}-openart-ref.json` : "openart-ref.json";
   const p = path.join(dir, filename);
-  if (!fs.existsSync(p)) return null;
+  if (!fileStore().exists(p)) return null;
   try {
-    const data = JSON.parse(fs.readFileSync(p, "utf-8"));
+    const data = JSON.parse(fileStore().readText(p));
     return data.url || null;
   } catch {
     return null;
@@ -199,9 +198,9 @@ function findOpenartRef(dir: string, prefix?: string): string | null {
 function findOpenartResourceId(dir: string, prefix?: string): string | null {
   const filename = prefix ? `${prefix}-openart-ref.json` : "openart-ref.json";
   const p = path.join(dir, filename);
-  if (!fs.existsSync(p)) return null;
+  if (!fileStore().exists(p)) return null;
   try {
-    const data = JSON.parse(fs.readFileSync(p, "utf-8"));
+    const data = JSON.parse(fileStore().readText(p));
     return data.resourceId || null;
   } catch {
     return null;
@@ -268,17 +267,17 @@ function parseShot(shotDir: string, defaultAr = "9:16"): Shot | null {
 }
 
 function findVideo(videosDir: string, code: string): string | null {
-  if (!fs.existsSync(videosDir)) return null;
+  if (!fileStore().exists(videosDir)) return null;
   for (const ext of VIDEO_EXTS) {
     const p = path.join(videosDir, `${code}${ext}`);
-    if (fs.existsSync(p)) return p;
+    if (fileStore().exists(p)) return p;
   }
   return null;
 }
 
 function attachVideoPrompts(shot: Shot, videoPromptsDir: string, defaultAr = "9:16"): void {
   const klingDir = path.join(videoPromptsDir, shot.code);
-  if (!fs.existsSync(klingDir)) return;
+  if (!fileStore().exists(klingDir)) return;
 
   const klingFile = readMdFile(path.join(klingDir, "kling-prompt.md"));
   if (klingFile) {
@@ -416,7 +415,7 @@ function parseCharacterViews(body: string, charSlug: string, charsDir: string): 
       const imgBase = `${charSlug}-${viewSlug}`;
       for (const ext of IMAGE_EXTS) {
         const p = path.join(charsDir, `${imgBase}${ext}`);
-        if (fs.existsSync(p)) { imagePath = p; break; }
+        if (fileStore().exists(p)) { imagePath = p; break; }
       }
 
       const openartRef = findOpenartRef(charsDir, imgBase);
@@ -486,8 +485,8 @@ function collectElements(
   const fileBaseNames = new Map<Character, string>();
 
   for (const { dir, scope } of sources) {
-    if (!fs.existsSync(dir)) continue;
-    const mdFiles = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+    if (!fileStore().exists(dir)) continue;
+    const mdFiles = fileStore().readDir(dir).map((e) => e.name).filter((f) => f.endsWith(".md"));
     for (const f of mdFiles) {
       const char = parseCharacter(path.join(dir, f), scope);
       if (!char) continue;
@@ -532,19 +531,18 @@ export function loadGlobalElements(globalElementDirs: string[]): Character[] {
 
 /** Load the series bible markdown docs (narrative canon), grouped by subdir. */
 export function loadBibleDocs(bibleDir: string): BibleDoc[] {
-  if (!fs.existsSync(bibleDir)) return [];
+  if (!fileStore().exists(bibleDir)) return [];
   const docs: BibleDoc[] = [];
 
   const walk = (dir: string, group: string, depth: number) => {
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    const entries: DirEntry[] = fileStore().readDir(dir);
     for (const e of entries) {
       const full = path.join(dir, e.name);
-      if (e.isDirectory()) {
+      if (e.isDirectory) {
         if (depth < 2 && !e.name.startsWith(".")) walk(full, e.name, depth + 1);
       } else if (e.name.endsWith(".md")) {
         const base = path.basename(e.name, ".md");
-        const { content } = safeMatter(fs.readFileSync(full, "utf-8")); // strip frontmatter
+        const { content } = safeMatter(fileStore().readText(full)); // strip frontmatter
         docs.push({
           name: base.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
           slug: group === "canon" ? base : `${group}/${base}`,
@@ -568,9 +566,9 @@ export function loadProject(
   seriesDefaults?: { aspect_ratio: string; default_resolution: string }
 ): ProjectIndex | null {
   const yamlPath = path.join(projectDir, "project.yaml");
-  if (!fs.existsSync(yamlPath)) return null;
+  if (!fileStore().exists(yamlPath)) return null;
 
-  const rawConfig = yaml.load(fs.readFileSync(yamlPath, "utf-8")) as Record<string, unknown>;
+  const rawConfig = yaml.load(fileStore().readText(yamlPath)) as Record<string, unknown>;
   const config: ProjectConfig = {
     name: (rawConfig.name as string) ?? "",
     slug: (rawConfig.slug as string) ?? "",
@@ -588,9 +586,9 @@ export function loadProject(
   const videosDir = path.join(projectDir, "storyboard", "videos");
 
   const shots: Shot[] = [];
-  if (fs.existsSync(shotsDir)) {
-    const shotDirs = fs.readdirSync(shotsDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+  if (fileStore().exists(shotsDir)) {
+    const shotDirs = fileStore().readDir(shotsDir)
+      .filter((d) => d.isDirectory)
       .map((d) => path.join(shotsDir, d.name))
       .sort();
 
@@ -675,9 +673,9 @@ function readProjectAspectRatio(
 ): string {
   const fallback = seriesDefaults?.aspect_ratio ?? "9:16";
   const yamlPath = path.join(projectDir, "project.yaml");
-  if (!fs.existsSync(yamlPath)) return fallback;
+  if (!fileStore().exists(yamlPath)) return fallback;
   try {
-    const raw = yaml.load(fs.readFileSync(yamlPath, "utf-8")) as Record<string, unknown>;
+    const raw = yaml.load(fileStore().readText(yamlPath)) as Record<string, unknown>;
     return (raw.aspect_ratio as string) ?? fallback;
   } catch {
     return fallback;
@@ -697,8 +695,8 @@ export function loadSingleCharacter(
     ...localDirs.map((d) => [d, "local"] as const),
     ...globalElementDirs.map((d) => [d, "global"] as const),
   ]) {
-    if (!fs.existsSync(dir)) continue;
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+    if (!fileStore().exists(dir)) continue;
+    const files = fileStore().readDir(dir).map((e) => e.name).filter((f) => f.endsWith(".md"));
     for (const f of files) {
       const char = parseCharacter(path.join(dir, f), scope);
       if (char && char.slug === charSlug) return char;
@@ -714,7 +712,7 @@ const DISCOVERY_SKIP_DIRS = new Set([
 
 function readProjectConfig(yamlPath: string): ProjectConfig | null {
   try {
-    const raw = yaml.load(fs.readFileSync(yamlPath, "utf-8")) as Record<string, unknown>;
+    const raw = yaml.load(fileStore().readText(yamlPath)) as Record<string, unknown>;
     return {
       name: (raw.name as string) ?? "",
       slug: (raw.slug as string) ?? "",
@@ -742,7 +740,7 @@ function loadSeries(
 ): DiscoveredSeries | null {
   let raw: Record<string, unknown>;
   try {
-    raw = yaml.load(fs.readFileSync(path.join(seriesDir, "series.yaml"), "utf-8")) as Record<string, unknown>;
+    raw = yaml.load(fileStore().readText(path.join(seriesDir, "series.yaml"))) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -767,9 +765,9 @@ function loadSeries(
     episodeDirs = (raw.episodes as string[]).map((e) => path.resolve(seriesDir, e));
   } else {
     const episodesRoot = path.join(seriesDir, "episodes");
-    episodeDirs = fs.existsSync(episodesRoot)
-      ? fs.readdirSync(episodesRoot, { withFileTypes: true })
-          .filter((d) => d.isDirectory())
+    episodeDirs = fileStore().exists(episodesRoot)
+      ? fileStore().readDir(episodesRoot)
+          .filter((d) => d.isDirectory)
           .map((d) => path.join(episodesRoot, d.name))
           .sort()
       : [];
@@ -778,7 +776,7 @@ function loadSeries(
   const episodes: DiscoveredProject[] = [];
   for (const epDir of episodeDirs) {
     const epYaml = path.join(epDir, "project.yaml");
-    if (!fs.existsSync(epYaml)) continue; // episode not yet at storyboard stage
+    if (!fileStore().exists(epYaml)) continue; // episode not yet at storyboard stage
     const resolved = path.resolve(epDir);
     if (seen.paths.has(resolved)) continue;
     const epConfig = readProjectConfig(epYaml);
@@ -825,7 +823,7 @@ export function discoverWorkspace(baseDirs: string | string[], maxDepth = 4): Wo
   const seenSeries = new Set<string>();
 
   const visit = (dir: string, depth: number) => {
-    if (fs.existsSync(path.join(dir, "series.yaml"))) {
+    if (fileStore().exists(path.join(dir, "series.yaml"))) {
       const resolved = path.resolve(dir);
       if (seenSeries.has(resolved)) return;
       seenSeries.add(resolved);
@@ -835,7 +833,7 @@ export function discoverWorkspace(baseDirs: string | string[], maxDepth = 4): Wo
     }
 
     const projYaml = path.join(dir, "project.yaml");
-    if (fs.existsSync(projYaml)) {
+    if (fileStore().exists(projYaml)) {
       const resolved = path.resolve(dir);
       if (seen.paths.has(resolved)) return;
       const config = readProjectConfig(projYaml);
@@ -851,21 +849,16 @@ export function discoverWorkspace(baseDirs: string | string[], maxDepth = 4): Wo
     }
 
     if (depth >= maxDepth) return;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
+    const entries: DirEntry[] = fileStore().readDir(dir);
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory) continue;
       if (entry.name.startsWith(".") || DISCOVERY_SKIP_DIRS.has(entry.name)) continue;
       visit(path.join(dir, entry.name), depth + 1);
     }
   };
 
   for (const root of roots) {
-    if (fs.existsSync(root)) visit(root, 0);
+    if (fileStore().exists(root)) visit(root, 0);
   }
   const value: Workspace = { projects, series };
   wsCache = { key, time: now, value };

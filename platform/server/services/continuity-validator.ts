@@ -23,9 +23,9 @@
  * The manifest (`storyboard/continuity/scene-N-objects.md`) is the source of truth for
  * physical state; the prompt is checked against it. See physics-engine/ for the full design.
  */
-import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
+import { fileStore } from "./file-store.js";
 import type { ProjectIndex, Shot, Character } from "../types.js";
 import { UNFLATTERING_RE, BUILD_TOKEN } from "./physics-vocab.js";
 
@@ -241,8 +241,8 @@ function objectNounFromTitle(title: string): string {
 }
 
 export function parseManifestFile(filePath: string, knownNames: string[]): SceneManifest | null {
-  if (!fs.existsSync(filePath)) return null;
-  const raw = fs.readFileSync(filePath, "utf-8");
+  if (!fileStore().exists(filePath)) return null;
+  const raw = fileStore().readText(filePath);
   const { data, content } = matter(raw);
   // scene may be a number, or a label like "Floor 1 — present (1A–1C…)" — extract the integer.
   const scene =
@@ -332,9 +332,10 @@ export function parseManifestFile(filePath: string, knownNames: string[]): Scene
 
 export function loadManifests(projectDir: string, knownNames: string[]): SceneManifest[] {
   const dir = path.join(projectDir, "storyboard", "continuity");
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
+  if (!fileStore().exists(dir)) return [];
+  return fileStore()
+    .readDir(dir)
+    .map((e) => e.name)
     .filter((f) => /scene-.*-objects\.md$/.test(f))
     .map((f) => parseManifestFile(path.join(dir, f), knownNames))
     .filter((m): m is SceneManifest => m !== null)
