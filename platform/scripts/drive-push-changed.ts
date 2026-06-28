@@ -24,27 +24,32 @@ export interface PushTarget {
 
 /**
  * Resolve changed repo-relative paths to per-file push targets: keep only authored TEXT
- * files that live under a project (nearest ancestor dir, within the repo, holding
- * project.yaml). `hasProjectYaml` is injected so this is unit-testable without a real tree.
+ * files that live under a project. The mirror root is the nearest `series.yaml` ancestor if
+ * there is one (so a series' episodes AND its shared global library keep their structure
+ * under a single Drive folder), otherwise the nearest `project.yaml` ancestor (standalone
+ * project). `hasFile` is injected so this is unit-testable without a real tree.
  */
 export function resolveTargets(
   repo: string,
   changed: string[],
-  hasProjectYaml: (dir: string) => boolean
+  hasFile: (dir: string, name: string) => boolean
 ): PushTarget[] {
   const out: PushTarget[] = [];
   for (const rel of changed) {
     if (!rel || !isTextFile(rel)) continue; // assets / non-text are not git-mirrored
     const abs = path.resolve(repo, rel);
     let dir = path.dirname(abs);
-    let root: string | null = null;
-    // Walk up to the repo root looking for the owning project.
+    let projectRoot: string | null = null;
+    let seriesRoot: string | null = null;
+    // Walk up to the repo root, noting the nearest project.yaml and series.yaml.
     while (dir.length >= repo.length && dir.startsWith(repo)) {
-      if (hasProjectYaml(dir)) { root = dir; break; }
+      if (!seriesRoot && hasFile(dir, "series.yaml")) seriesRoot = dir;
+      if (!projectRoot && hasFile(dir, "project.yaml")) projectRoot = dir;
       if (dir === repo) break;
       dir = path.dirname(dir);
     }
-    if (!root) continue; // changed file isn't part of any project
+    const root = seriesRoot || projectRoot;
+    if (!root) continue; // changed file isn't part of any project/series
     out.push({
       projectName: path.basename(root),
       projectRoot: root,
@@ -99,7 +104,7 @@ async function main(): Promise<number> {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const targets = resolveTargets(repo, changed, (d) => fs.existsSync(path.join(d, "project.yaml")));
+  const targets = resolveTargets(repo, changed, (d, name) => fs.existsSync(path.join(d, name)));
   if (!targets.length) {
     console.log("drive-push-changed: no project markdown changed — nothing to mirror.");
     return 0;

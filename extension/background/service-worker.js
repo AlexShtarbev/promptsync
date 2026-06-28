@@ -68,10 +68,35 @@ async function rootFolderId() {
   if (!f) throw new Error(`Drive folder '${DRIVE_ROOT}' not found (push a project first).`);
   return f.id;
 }
-async function listProjects() {
+// slug -> how to load it: which top folder to snapshot, its mount, and the project path
+// inside that snapshot. A series top folder (has an `episodes/` child) contributes one
+// route per episode (snapshotting the whole series so shared globals resolve); a standalone
+// project contributes itself.
+let projectRoutes = {};
+
+async function buildRoutes() {
   const rid = await rootFolderId();
-  const kids = await api().listFolder(rid);
-  return kids.filter((c) => c.mimeType === FOLDER_MIME).map((c) => ({ slug: c.name, name: c.name }));
+  const tops = (await api().listFolder(rid)).filter((c) => c.mimeType === FOLDER_MIME);
+  const routes = {};
+  for (const top of tops) {
+    const kids = await api().listFolder(top.id);
+    const epDir = kids.find((k) => k.name === "episodes" && k.mimeType === FOLDER_MIME);
+    if (epDir) {
+      const eps = (await api().listFolder(epDir.id)).filter((k) => k.mimeType === FOLDER_MIME);
+      for (const ep of eps) {
+        routes[ep.name] = { snapFolderId: top.id, mount: `/drive/${top.name}`, projPath: `/drive/${top.name}/episodes/${ep.name}`, series: top.name };
+      }
+    } else {
+      routes[top.name] = { snapFolderId: top.id, mount: `/drive/${top.name}`, projPath: `/drive/${top.name}` };
+    }
+  }
+  projectRoutes = routes;
+  return routes;
+}
+
+async function listProjects() {
+  const routes = await buildRoutes();
+  return Object.keys(routes).map((slug) => ({ slug, name: routes[slug].series ? `${routes[slug].series} / ${slug}` : slug }));
 }
 
 // ---------------- Drive WRITE (Writer 3: extension commits its products) ----------------
@@ -125,16 +150,19 @@ async function driveUpload(project, destPath, mimeType, base64) {
   return { ok: true, id: (await r.json()).id, action: "created" };
 }
 
-// Snapshot one project folder from Drive and parse it into an ExtensionIndex.
+// Snapshot a project's folder from Drive (the whole series folder for an episode, so shared
+// globals resolve) and parse it into an ExtensionIndex.
 async function loadIndex(project) {
-  const rid = await rootFolderId();
-  const pf = await findChildFolder(rid, project);
-  if (!pf) throw new Error(`Project '${project}' not found in Drive.`);
-  const { store } = await buildSnapshot(api(), pf.id, `/drive/${project}`);
+  if (!projectRoutes[project]) await buildRoutes();
+  const route = projectRoutes[project];
+  if (!route) throw new Error(`Project '${project}' not found in Drive.`);
+  const { store } = await buildSnapshot(api(), route.snapFolderId, route.mount);
   setFileStore(store);
-  // Exactly one project lives in this snapshot; discoverProjects gives us its parse params.
-  const found = discoverProjects("/drive");
-  cachedProj = found[0] || { slug: project, path: `/drive/${project}`, globalElementDirs: [], seriesDefaults: undefined };
+  const found = discoverProjects(route.mount);
+  cachedProj = found.find((p) => p.path === route.projPath)
+    || found.find((p) => p.path.endsWith("/" + project))
+    || found[0];
+  if (!cachedProj) throw new Error(`Failed to locate project '${project}' in snapshot.`);
   const index = loadProject(cachedProj.path, cachedProj.globalElementDirs, cachedProj.seriesDefaults);
   if (!index) throw new Error(`Failed to parse project '${project}'.`);
   cachedIndex = buildExtensionIndex(index, project);

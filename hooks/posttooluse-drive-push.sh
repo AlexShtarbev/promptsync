@@ -35,13 +35,16 @@ case "$FILE" in
   *) exit 0 ;;
 esac
 
-# 3) Walk up to the owning PromptSync project (nearest ancestor with project.yaml).
+# 3) Walk up to the owning project. Prefer the nearest series.yaml root (so a series'
+#    episodes + shared globals mirror under one Drive folder); else nearest project.yaml.
 dir="$(dirname "$FILE")"
-root=""
+proot=""; sroot=""
 while [ -n "$dir" ] && [ "$dir" != "/" ]; do
-  if [ -f "$dir/project.yaml" ]; then root="$dir"; break; fi
+  [ -z "$sroot" ] && [ -f "$dir/series.yaml" ] && sroot="$dir"
+  [ -z "$proot" ] && [ -f "$dir/project.yaml" ] && proot="$dir"
   dir="$(dirname "$dir")"
 done
+root="${sroot:-$proot}"
 [ -n "$root" ] || exit 0   # not part of a PromptSync project → ignore
 
 # 4) Background the upsert; never block the tool. drive-push-changed re-validates the
