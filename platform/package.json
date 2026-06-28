@@ -16,6 +16,8 @@
     "sync-board": "tsx scripts/sync-board.ts",
     "drive-auth": "tsx scripts/drive-auth.ts",
     "push-drive": "tsx scripts/push-drive.ts",
+    "push-drive-changed": "tsx scripts/drive-push-changed.ts",
+    "install-drive-hook": "tsx scripts/install-drive-hook.ts",
     "emit": "tsx scripts/emit.ts",
     "check-images": "tsx scripts/check-images.ts",
     "test": "tsx --test 'src/**/*.test.ts' 'server/**/*.test.ts' 'scripts/**/*.test.ts'"
