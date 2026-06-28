@@ -518,12 +518,13 @@ async function flowAttachPrimaryReference() {
   const target = flowCurrentTarget;
   if (!target || target.type !== "char") return;
   try {
-    const res = await fetch(`${PROMPTSYNC_API}/extension/character?project=${target.project}&char=${target.charSlug}`);
-    if (!res.ok) {
-      console.warn("[Flow] character fetch failed:", res.status);
+    let char;
+    try {
+      char = await fetchCharacter(target.project, target.charSlug);
+    } catch (e) {
+      console.warn("[Flow] character fetch failed:", e.message);
       return;
     }
-    const char = await res.json();
     const primary = (char.views || []).find((v) => v.primary && v.has_image);
     if (!primary) {
       console.warn("[Flow] no PRIMARY view with an image for", target.charSlug, "- skipping reference");

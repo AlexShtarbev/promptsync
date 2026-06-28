@@ -30,29 +30,64 @@ let autoGenRunning = false;
 let autoGenStopped = false;
 let elementMap = {};
 
-async function checkServer() {
+function sendSW(msg) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(msg, (r) => {
+      const err = chrome.runtime.lastError;
+      if (err) return reject(new Error(err.message));
+      resolve(r);
+    });
+  });
+}
+
+// Drive connection state: "connected" | "configured" (creds saved, not authed) | "setup".
+async function checkDrive() {
   try {
-    const res = await fetch(`${API}/projects`);
-    if (res.ok) {
-      statusEl.textContent = "Live";
-      statusEl.className = "status ok";
-      return true;
-    }
+    const st = await sendSW({ type: "drive-get-status" });
+    if (st?.connected) { statusEl.textContent = "Drive"; statusEl.className = "status ok"; return "connected"; }
+    if (st?.configured) { statusEl.textContent = "Connect"; statusEl.className = "status err"; return "configured"; }
   } catch {}
-  statusEl.textContent = "Offline";
-  statusEl.className = "status err";
-  return false;
+  statusEl.textContent = "Setup"; statusEl.className = "status err"; return "setup";
+}
+
+// One-time "Connect Drive": paste OAuth client creds (device-flow), enter the shown code.
+function showConnect(state) {
+  projectSelect.disabled = true;
+  const needCreds = state === "setup";
+  shotsContainer.innerHTML = `
+    <div class="empty" id="connect-box" style="text-align:left;line-height:1.6">
+      <div style="font-weight:600;margin-bottom:6px">Connect Google Drive</div>
+      ${needCreds ? `
+        <input id="cx-id" placeholder="OAuth Client ID" style="width:100%;margin:3px 0;padding:6px;background:#1a1a1a;border:1px solid #333;color:#eee;border-radius:4px"/>
+        <input id="cx-secret" placeholder="OAuth Client Secret" style="width:100%;margin:3px 0;padding:6px;background:#1a1a1a;border:1px solid #333;color:#eee;border-radius:4px"/>
+      ` : ``}
+      <button id="cx-go" class="btn-sm" style="margin-top:6px">${needCreds ? "Save & Connect" : "Connect"}</button>
+      <div id="cx-msg" style="margin-top:8px;color:#aaa"></div>
+    </div>`;
+  document.getElementById("cx-go").addEventListener("click", async () => {
+    const msgEl = document.getElementById("cx-msg");
+    try {
+      if (needCreds) {
+        const clientId = document.getElementById("cx-id").value.trim();
+        const clientSecret = document.getElementById("cx-secret").value.trim();
+        if (!clientId) { msgEl.textContent = "Client ID required"; return; }
+        await sendSW({ type: "drive-set-config", clientId, clientSecret });
+      }
+      msgEl.textContent = "Requesting code…";
+      const r = await sendSW({ type: "drive-auth-start" });
+      if (!r?.ok) { msgEl.textContent = r?.error || "Failed to start auth"; return; }
+      msgEl.innerHTML = `Go to <a href="${r.verification_url}" target="_blank" style="color:#8b5cf6">${r.verification_url}</a><br/>enter code: <code style="font-size:15px;color:#fff">${r.user_code}</code><br/><span style="color:#888">Waiting for authorization…</span>`;
+    } catch (e) { msgEl.textContent = e.message; }
+  });
 }
 
 async function loadProjects() {
-  const online = await checkServer();
-  if (!online) {
-    shotsContainer.innerHTML = '<div class="empty">Server offline — start PromptSync platform</div>';
-    return;
-  }
+  const state = await checkDrive();
+  if (state !== "connected") { showConnect(state); return; }
 
-  const res = await fetch(`${API}/projects`);
-  const projects = await res.json();
+  let projects = [];
+  try { projects = (await sendSW({ type: "list-projects" }))?.projects || []; }
+  catch (e) { shotsContainer.innerHTML = `<div class="empty">Drive error: ${e.message}</div>`; return; }
 
   projectSelect.innerHTML = '<option value="">Select project...</option>';
   for (const p of projects) {
@@ -63,9 +98,8 @@ async function loadProjects() {
   }
   projectSelect.disabled = false;
 
-  // Prefer the project the web UI currently has open; fall back to last-used.
   let active = null;
-  try { active = (await (await fetch(`${API}/active`)).json()).slug; } catch {}
+  try { active = (await sendSW({ type: "get-active" }))?.slug; } catch {}
   if (!active) {
     const stored = await chrome.storage.local.get("activeProject");
     active = stored.activeProject;
@@ -81,6 +115,11 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "active-changed" && msg.slug && msg.slug !== projectSelect.value) {
     projectSelect.value = msg.slug;
     loadShots(msg.slug);
+  }
+  if (msg?.type === "drive-auth-done") loadProjects();
+  if (msg?.type === "drive-auth-error") {
+    const m = document.getElementById("cx-msg");
+    if (m) m.textContent = "Auth failed: " + (msg.error || "");
   }
 });
 

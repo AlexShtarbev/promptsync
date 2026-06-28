@@ -2,16 +2,56 @@ const PROMPTSYNC_API = "http://localhost:3456/api";
 
 var _ps = { queue: Promise.resolve() };
 
+// Project data now comes from Google Drive, snapshotted + parsed in the service worker.
+// Content scripts ask the SW instead of hitting a local server.
+function psSW(msg) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(msg, (r) => {
+      const err = chrome.runtime.lastError;
+      if (err) return reject(new Error(err.message));
+      if (r && r.ok === false) return reject(new Error(r.error || "request failed"));
+      resolve(r);
+    });
+  });
+}
+
 async function fetchShot(project, code) {
-  const res = await fetch(`${PROMPTSYNC_API}/extension/shot?project=${project}&code=${code}`);
-  if (!res.ok) throw new Error(`Shot ${code} not found`);
-  return res.json();
+  const r = await psSW({ type: "get-shot", project, code });
+  if (!r?.shot) throw new Error(`Shot ${code} not found`);
+  return r.shot;
 }
 
 async function fetchIndex(project) {
-  const res = await fetch(`${PROMPTSYNC_API}/extension/index?project=${project}`);
-  if (!res.ok) throw new Error(`Project ${project} not found`);
-  return res.json();
+  const r = await psSW({ type: "get-index", project });
+  if (!r?.index) throw new Error(`Project ${project} not found`);
+  return r.index;
+}
+
+async function fetchCharacter(project, charSlug) {
+  const r = await psSW({ type: "get-character", project, char: charSlug });
+  if (!r?.character) throw new Error(`Character ${charSlug} not found`);
+  return r.character;
+}
+
+// Writer 3: push a captured asset (blob) straight to Drive via the service worker.
+function psBlobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(new Error("read failed"));
+    r.readAsDataURL(blob);
+  });
+}
+async function psDriveUpload(project, destPath, blob) {
+  const base64 = await psBlobToBase64(blob);
+  return psSW({ type: "drive-upload", project, destPath, mimeType: blob.type || "application/octet-stream", base64 });
+}
+function psAssetExt(type, isVideo) {
+  type = (type || "").toLowerCase();
+  if (isVideo) return type.includes("webm") ? "webm" : (type.includes("quicktime") || type.includes("mov")) ? "mov" : "mp4";
+  if (type.includes("webp")) return "webp";
+  if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
+  return "png";
 }
 
 function copyFallback(text, shotCode) {
@@ -810,12 +850,13 @@ async function handleAutoDownload({ url, thumbnailUrl, resourceId, creationType,
     // the shot then "disappears" from the board.
     const isVideo = creationType === "video" || (blob.type || "").startsWith("video/");
 
-    let uploadUrl;
+    const ext = psAssetExt(blob.type, isVideo);
+    let destPath;
     let label;
     if (target.type === "shot") {
-      uploadUrl = isVideo
-        ? `${PROMPTSYNC_API}/assets/${target.project}/shots/${target.code}/video/upload`
-        : `${PROMPTSYNC_API}/assets/${target.project}/shots/${target.code}/image/upload`;
+      destPath = isVideo
+        ? `storyboard/shots/${target.code}/video.${ext}`
+        : `storyboard/shots/${target.code}/image.${ext}`;
       label = target.code;
     } else if (target.type === "char") {
       if (isVideo) {
@@ -824,29 +865,16 @@ async function handleAutoDownload({ url, thumbnailUrl, resourceId, creationType,
         showToast(`Skipped video for ${target.charSlug} (characters are stills only)`, true);
         return;
       }
-      uploadUrl = `${PROMPTSYNC_API}/assets/${target.project}/characters/${target.charSlug}/${target.viewSlug}/image/upload`;
+      destPath = `storyboard/characters/${target.charSlug}/${target.viewSlug}/image.${ext}`;
       label = `${target.charSlug} - ${target.viewSlug}`;
     }
 
-    if (!uploadUrl) return;
+    if (!destPath) return;
 
-    const headers = isVideo
-      ? { "Content-Type": (blob.type || "").startsWith("video/") ? blob.type : "video/mp4" }
-      : (() => {
-          const h = { "Content-Type": blob.type || "image/jpeg", "X-OpenArt-Ref": url };
-          if (resourceId) h["X-OpenArt-Resource-Id"] = resourceId;
-          return h;
-        })();
-
-    const uploadResp = await fetch(uploadUrl, {
-      method: "POST",
-      headers,
-      body: blob,
-    });
-
-    const result = await uploadResp.json();
-    if (result.ok) {
-      showToast(`Auto-saved ${label}`);
+    // Push straight to Drive (Writer 3) via the service worker — no local server.
+    const result = await psDriveUpload(target.project, destPath, blob);
+    if (result?.ok) {
+      showToast(`Auto-saved ${label} to Drive`);
       if (target.type === "char" && resourceId) {
         chrome.storage.local.set({
           [`openart-res:${target.project}:${target.charSlug}:${target.viewSlug}`]: { resourceId, url },

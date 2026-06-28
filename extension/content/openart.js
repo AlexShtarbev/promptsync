@@ -1130,9 +1130,7 @@ async function collectCharVisualReferences(project, charSlug, views) {
 }
 
 async function generateCharViews(project, charSlug, onProgress) {
-  const res = await fetch(`${PROMPTSYNC_API}/extension/character?project=${project}&char=${charSlug}`);
-  if (!res.ok) throw new Error("Character not found");
-  const char = await res.json();
+  const char = await fetchCharacter(project, charSlug);
 
   const viewsToGenerate = char.views.filter((v) => !v.has_image && v.prompt);
   if (!viewsToGenerate.length) throw new Error("All views already have images");

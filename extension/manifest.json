@@ -5,7 +5,9 @@
   "description": "Inject storyboard prompts into MJ, OpenArt, and Google Flow",
   "permissions": ["activeTab", "tabs", "storage", "clipboardWrite", "sidePanel"],
   "host_permissions": [
-    "http://localhost:3456/*"
+    "http://localhost:3456/*",
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*"
   ],
   "action": {
     "default_icon": {
@@ -18,7 +20,8 @@
     "default_path": "panel/panel.html"
   },
   "background": {
-    "service_worker": "background/service-worker.js"
+    "service_worker": "background/service-worker.js",
+    "type": "module"
   },
   "content_scripts": [
     {
