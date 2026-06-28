@@ -534,7 +534,9 @@ async function flowAttachPrimaryReference() {
       flowLog("[Flow] injecting the PRIMARY view itself — no self-reference");
       return;
     }
-    const imageUrl = `${PROMPTSYNC_API}/assets/${target.project}/characters/${target.charSlug}/${primary.slug}/image`;
+    const imageUrl = await psSW({ type: "get-asset", project: target.project, kind: "char-image", charSlug: target.charSlug, viewSlug: primary.slug })
+      .then((r) => (r?.ok ? r.dataUrl : null)).catch(() => null);
+    if (!imageUrl) { console.warn("[Flow] primary reference image not in Drive yet"); return; }
     const fileName = `ref-${target.charSlug}-${primary.slug}.jpg`;
     // If the primary view was generated in Flow, its saved ref carries the Flow
     // resource id (?name=…) — so we can reference that existing generation rather

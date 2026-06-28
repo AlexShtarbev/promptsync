@@ -40,6 +40,29 @@ function sendSW(msg) {
   });
 }
 
+// Pull an asset's bytes from Drive (via the SW) as a data URL for <img src>.
+async function assetDataUrl(params) {
+  try { const r = await sendSW({ type: "get-asset", project: currentProject, ...params }); return r?.ok ? r.dataUrl : null; }
+  catch { return null; }
+}
+function hydrateThumb(img) {
+  if (img.dataset.loaded) return;
+  img.dataset.loaded = "1";
+  const params = img.dataset.thumb
+    ? { kind: "shot-image", code: img.dataset.thumb }
+    : { kind: "char-image", charSlug: img.dataset.cslug, viewSlug: img.dataset.vslug };
+  assetDataUrl(params).then((u) => { if (u) img.src = u; });
+}
+// Any thumbnail <img data-has-image> added to a container gets its bytes pulled from Drive.
+function observeThumbs(container) {
+  if (!container) return;
+  const scan = () => container.querySelectorAll("img[data-has-image]:not([data-loaded])").forEach(hydrateThumb);
+  new MutationObserver(scan).observe(container, { childList: true, subtree: true });
+  scan();
+}
+observeThumbs(shotsContainer);
+observeThumbs(charsContainer);
+
 // Drive connection state: "connected" | "configured" (creds saved, not authed) | "setup".
 async function checkDrive() {
   try {
@@ -230,7 +253,7 @@ function renderShots() {
     const statusClass = shot.status ? `status-${shot.status}` : "";
 
     const thumbHtml = thumbWithOrbit(shot.has_image
-      ? `<img class="shot-thumb-ext" data-thumb="${shot.code}" src="${API}/assets/${currentProject}/shots/${shot.code}/image" alt="${shot.code}" />`
+      ? `<img class="shot-thumb-ext" data-thumb="${shot.code}" data-has-image="1" alt="${shot.code}" />`
       : `<div class="shot-thumb-placeholder" data-thumb="${shot.code}">--</div>`);
 
     card.innerHTML = `
@@ -494,9 +517,10 @@ function updateThumbnail(code) {
   const img = document.createElement("img");
   img.className = "shot-thumb-ext";
   img.dataset.thumb = code;
+  img.dataset.hasImage = "1";
   img.alt = code;
-  img.src = `${API}/assets/${currentProject}/shots/${code}/image?v=${Date.now()}`;
   el.replaceWith(img);
+  hydrateThumb(img); // pull bytes from Drive
 }
 
 const DEL_ICON_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 1a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5zM3 3.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1H12l-.5 9a1.5 1.5 0 0 1-1.5 1.4H6A1.5 1.5 0 0 1 4.5 13L4 4H3.5a.5.5 0 0 1-.5-.5z"/></svg>';
@@ -1152,7 +1176,7 @@ function renderCharacters() {
       item.className = "char-view-item";
 
       const thumbHtml = thumbWithOrbit(view.has_image
-        ? `<img class="char-view-thumb" data-char-thumb="${char.slug}-${view.slug}" src="${API}/assets/${currentProject}/characters/${char.slug}/${view.slug}/image" alt="${view.name}" />`
+        ? `<img class="char-view-thumb" data-char-thumb="${char.slug}-${view.slug}" data-cslug="${char.slug}" data-vslug="${view.slug}" data-has-image="1" alt="${view.name}" />`
         : `<div class="char-view-thumb-placeholder" data-char-thumb="${char.slug}-${view.slug}">--</div>`);
 
       item.innerHTML = `
@@ -1557,9 +1581,12 @@ function updateCharThumb(charSlug, viewSlug) {
   const img = document.createElement("img");
   img.className = "char-view-thumb";
   img.dataset.charThumb = key;
+  img.dataset.cslug = charSlug;
+  img.dataset.vslug = viewSlug;
+  img.dataset.hasImage = "1";
   img.alt = viewSlug;
-  img.src = `${API}/assets/${currentProject}/characters/${charSlug}/${viewSlug}/image?v=${Date.now()}`;
   el.replaceWith(img);
+  hydrateThumb(img); // pull bytes from Drive
 }
 
 function startMediaPolling() {

@@ -15,6 +15,7 @@ const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 let cachedIndex = null;   // ExtensionIndex of the loaded project
 let cachedProj = null;    // discovered project { slug, path, globalElementDirs, seriesDefaults }
+let cachedAssetIds = new Map(); // virtual path -> Drive fileId, for binary assets (images/videos)
 let currentProject = null;
 let currentShotIdx = 0;
 
@@ -156,7 +157,8 @@ async function loadIndex(project) {
   if (!projectRoutes[project]) await buildRoutes();
   const route = projectRoutes[project];
   if (!route) throw new Error(`Project '${project}' not found in Drive.`);
-  const { store } = await buildSnapshot(api(), route.snapFolderId, route.mount);
+  const { store, assetIds } = await buildSnapshot(api(), route.snapFolderId, route.mount);
+  cachedAssetIds = assetIds;
   setFileStore(store);
   const found = discoverProjects(route.mount);
   cachedProj = found.find((p) => p.path === route.projPath)
@@ -174,6 +176,27 @@ async function loadIndex(project) {
 async function ensureLoaded(project) {
   if (project && (project !== currentProject || !cachedIndex)) await loadIndex(project);
   if (!cachedIndex) throw new Error("No project loaded.");
+}
+
+function mimeOfPath(p) {
+  const e = (p.split(".").pop() || "").toLowerCase();
+  return e === "png" ? "image/png" : e === "webp" ? "image/webp"
+    : e === "mp4" ? "video/mp4" : e === "webm" ? "video/webm" : e === "mov" ? "video/quicktime"
+    : "image/jpeg";
+}
+
+// Fetch a binary asset's bytes from Drive (by its snapshot fileId) as a data URL the UI can
+// drop straight into <img src>. (An <img> can't send a Bearer token, so the SW fetches.)
+async function assetDataUrl(virtPath) {
+  const fileId = cachedAssetIds.get(virtPath);
+  if (!fileId) return null;
+  const token = await getToken();
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: authHdr(token) });
+  if (!r.ok) throw new Error(`Drive ${r.status}`);
+  const buf = new Uint8Array(await r.arrayBuffer());
+  let bin = ""; const CH = 0x8000;
+  for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+  return `data:${mimeOfPath(virtPath)};base64,${btoa(bin)}`;
 }
 
 // Mirror the server /character shaping for content scripts.
@@ -275,6 +298,21 @@ const handlers = {
     const char = loadSingleCharacter(cachedProj.path, msg.char, cachedProj.globalElementDirs);
     if (!char) return { ok: false, error: "Character not found" };
     return { ok: true, character: shapeCharacter(char) };
+  },
+  "get-asset": async (msg) => {
+    await ensureLoaded(msg.project);
+    let virtPath = null;
+    if (msg.kind === "char-image") {
+      const char = loadSingleCharacter(cachedProj.path, msg.charSlug, cachedProj.globalElementDirs);
+      virtPath = char?.views?.find((v) => v.slug === msg.viewSlug)?.imagePath || null;
+    } else {
+      const shot = loadSingleShot(cachedProj.path, msg.code, cachedProj.globalElementDirs, cachedProj.seriesDefaults);
+      virtPath = shot?.imagePath || null;
+    }
+    if (!virtPath) return { ok: false, error: "no image for target" };
+    const dataUrl = await assetDataUrl(virtPath);
+    if (!dataUrl) return { ok: false, error: "image not in Drive yet" };
+    return { ok: true, dataUrl };
   },
   "refresh": async () => { if (currentProject) { await loadIndex(currentProject); notifyActiveChanged(currentProject); } return { ok: true }; },
 
