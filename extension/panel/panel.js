@@ -63,6 +63,11 @@ function observeThumbs(container) {
 observeThumbs(shotsContainer);
 observeThumbs(charsContainer);
 
+// Click the status pill to (re)connect Drive at any time — re-runs the OAuth popup.
+statusEl.style.cursor = "pointer";
+statusEl.title = "Click to (re)connect Google Drive";
+statusEl.addEventListener("click", () => { showConnect(); });
+
 // Drive connection state: "connected" | "configured" (creds saved, not authed) | "setup".
 async function checkDrive() {
   try {
@@ -73,37 +78,33 @@ async function checkDrive() {
   statusEl.textContent = "Setup"; statusEl.className = "status err"; return "setup";
 }
 
-// One-time "Connect Drive": paste OAuth (Web client) creds, then a Google popup grants the
-// Drive scope via chrome.identity.launchWebAuthFlow (the device flow can't request Drive).
-function showConnect(state) {
+// "Connect Drive": paste OAuth (Web client) creds, then a Google popup grants the Drive
+// scope via chrome.identity.launchWebAuthFlow (the device flow can't request Drive). The
+// fields are always shown (pre-filled) so you can re-enter/change creds and re-login.
+async function showConnect() {
   projectSelect.disabled = true;
-  const needCreds = state === "setup";
   const redirectUri = chrome.identity.getRedirectURL();
+  const { driveConfig } = await chrome.storage.local.get("driveConfig");
   const inputStyle = "width:100%;margin:3px 0;padding:6px;background:#1a1a1a;border:1px solid #333;color:#eee;border-radius:4px";
   shotsContainer.innerHTML = `
     <div class="empty" id="connect-box" style="text-align:left;line-height:1.6">
       <div style="font-weight:600;margin-bottom:6px">Connect Google Drive</div>
       <div style="font-size:11px;color:#888;margin-bottom:8px">In your OAuth <b>Web</b> client (Google Cloud → Credentials), add this Authorized redirect URI:<br><code style="word-break:break-all;color:#8b5cf6">${redirectUri}</code></div>
-      ${needCreds ? `
-        <input id="cx-id" placeholder="OAuth Client ID" style="${inputStyle}"/>
-        <input id="cx-secret" placeholder="OAuth Client Secret" style="${inputStyle}"/>
-      ` : ``}
+      <input id="cx-id" placeholder="OAuth Client ID" style="${inputStyle}"/>
+      <input id="cx-secret" placeholder="OAuth Client Secret" style="${inputStyle}"/>
       <button id="cx-go" class="btn-sm" style="margin-top:6px">Connect</button>
       <div id="cx-msg" style="margin-top:8px;color:#aaa"></div>
     </div>`;
+  // Pre-fill via .value (avoids HTML-escaping issues with secrets).
+  document.getElementById("cx-id").value = driveConfig?.clientId || "";
+  document.getElementById("cx-secret").value = driveConfig?.clientSecret || "";
   document.getElementById("cx-go").addEventListener("click", async () => {
     const msgEl = document.getElementById("cx-msg");
     try {
-      let clientId, clientSecret;
-      if (needCreds) {
-        clientId = document.getElementById("cx-id").value.trim();
-        clientSecret = document.getElementById("cx-secret").value.trim();
-        if (!clientId || !clientSecret) { msgEl.textContent = "Client ID and Secret required"; return; }
-        await sendSW({ type: "drive-set-config", clientId, clientSecret });
-      } else {
-        const { driveConfig } = await chrome.storage.local.get("driveConfig");
-        clientId = driveConfig?.clientId; clientSecret = driveConfig?.clientSecret;
-      }
+      const clientId = document.getElementById("cx-id").value.trim();
+      const clientSecret = document.getElementById("cx-secret").value.trim();
+      if (!clientId || !clientSecret) { msgEl.textContent = "Client ID and Secret required"; return; }
+      await sendSW({ type: "drive-set-config", clientId, clientSecret });
       msgEl.textContent = "Opening Google sign-in…";
       await connectDrive(clientId, clientSecret);
       msgEl.textContent = "Connected ✓";
@@ -132,7 +133,7 @@ async function connectDrive(clientId, clientSecret) {
 
 async function loadProjects() {
   const state = await checkDrive();
-  if (state !== "connected") { showConnect(state); return; }
+  if (state !== "connected") { showConnect(); return; }
 
   let projects = [];
   try { projects = (await sendSW({ type: "list-projects" }))?.projects || []; }
