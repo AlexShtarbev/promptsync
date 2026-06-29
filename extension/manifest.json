@@ -3,7 +3,7 @@
   "name": "PromptSync",
   "version": "0.2.0",
   "description": "Inject storyboard prompts into MJ, OpenArt, and Google Flow",
-  "permissions": ["activeTab", "tabs", "storage", "clipboardWrite", "sidePanel"],
+  "permissions": ["activeTab", "tabs", "storage", "clipboardWrite", "sidePanel", "identity"],
   "host_permissions": [
     "http://localhost:3456/*",
     "https://www.googleapis.com/*",

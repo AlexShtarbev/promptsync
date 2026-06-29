@@ -73,35 +73,61 @@ async function checkDrive() {
   statusEl.textContent = "Setup"; statusEl.className = "status err"; return "setup";
 }
 
-// One-time "Connect Drive": paste OAuth client creds (device-flow), enter the shown code.
+// One-time "Connect Drive": paste OAuth (Web client) creds, then a Google popup grants the
+// Drive scope via chrome.identity.launchWebAuthFlow (the device flow can't request Drive).
 function showConnect(state) {
   projectSelect.disabled = true;
   const needCreds = state === "setup";
+  const redirectUri = chrome.identity.getRedirectURL();
+  const inputStyle = "width:100%;margin:3px 0;padding:6px;background:#1a1a1a;border:1px solid #333;color:#eee;border-radius:4px";
   shotsContainer.innerHTML = `
     <div class="empty" id="connect-box" style="text-align:left;line-height:1.6">
       <div style="font-weight:600;margin-bottom:6px">Connect Google Drive</div>
+      <div style="font-size:11px;color:#888;margin-bottom:8px">In your OAuth <b>Web</b> client (Google Cloud → Credentials), add this Authorized redirect URI:<br><code style="word-break:break-all;color:#8b5cf6">${redirectUri}</code></div>
       ${needCreds ? `
-        <input id="cx-id" placeholder="OAuth Client ID" style="width:100%;margin:3px 0;padding:6px;background:#1a1a1a;border:1px solid #333;color:#eee;border-radius:4px"/>
-        <input id="cx-secret" placeholder="OAuth Client Secret" style="width:100%;margin:3px 0;padding:6px;background:#1a1a1a;border:1px solid #333;color:#eee;border-radius:4px"/>
+        <input id="cx-id" placeholder="OAuth Client ID" style="${inputStyle}"/>
+        <input id="cx-secret" placeholder="OAuth Client Secret" style="${inputStyle}"/>
       ` : ``}
-      <button id="cx-go" class="btn-sm" style="margin-top:6px">${needCreds ? "Save & Connect" : "Connect"}</button>
+      <button id="cx-go" class="btn-sm" style="margin-top:6px">Connect</button>
       <div id="cx-msg" style="margin-top:8px;color:#aaa"></div>
     </div>`;
   document.getElementById("cx-go").addEventListener("click", async () => {
     const msgEl = document.getElementById("cx-msg");
     try {
+      let clientId, clientSecret;
       if (needCreds) {
-        const clientId = document.getElementById("cx-id").value.trim();
-        const clientSecret = document.getElementById("cx-secret").value.trim();
-        if (!clientId) { msgEl.textContent = "Client ID required"; return; }
+        clientId = document.getElementById("cx-id").value.trim();
+        clientSecret = document.getElementById("cx-secret").value.trim();
+        if (!clientId || !clientSecret) { msgEl.textContent = "Client ID and Secret required"; return; }
         await sendSW({ type: "drive-set-config", clientId, clientSecret });
+      } else {
+        const { driveConfig } = await chrome.storage.local.get("driveConfig");
+        clientId = driveConfig?.clientId; clientSecret = driveConfig?.clientSecret;
       }
-      msgEl.textContent = "Requesting code…";
-      const r = await sendSW({ type: "drive-auth-start" });
-      if (!r?.ok) { msgEl.textContent = r?.error || "Failed to start auth"; return; }
-      msgEl.innerHTML = `Go to <a href="${r.verification_url}" target="_blank" style="color:#8b5cf6">${r.verification_url}</a><br/>enter code: <code style="font-size:15px;color:#fff">${r.user_code}</code><br/><span style="color:#888">Waiting for authorization…</span>`;
-    } catch (e) { msgEl.textContent = e.message; }
+      msgEl.textContent = "Opening Google sign-in…";
+      await connectDrive(clientId, clientSecret);
+      msgEl.textContent = "Connected ✓";
+      loadProjects();
+    } catch (e) { msgEl.textContent = "Auth failed: " + e.message; }
   });
+}
+
+// OAuth via chrome.identity.launchWebAuthFlow (supports full `drive`, unlike the device flow).
+async function connectDrive(clientId, clientSecret) {
+  const redirectUri = chrome.identity.getRedirectURL();
+  const authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+    client_id: clientId, response_type: "code", redirect_uri: redirectUri,
+    scope: "https://www.googleapis.com/auth/drive", access_type: "offline", prompt: "consent",
+  }).toString();
+  const redirect = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
+  const code = new URL(redirect).searchParams.get("code");
+  if (!code) throw new Error("no authorization code returned");
+  const tok = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }).toString(),
+  }).then((r) => r.json());
+  if (!tok.access_token) throw new Error(tok.error_description || tok.error || "token exchange failed");
+  await sendSW({ type: "drive-set-tokens", tokens: tok });
 }
 
 async function loadProjects() {

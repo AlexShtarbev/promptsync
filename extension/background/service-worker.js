@@ -267,6 +267,13 @@ const handlers = {
     await chrome.storage.local.set({ driveConfig: { clientId: msg.clientId, clientSecret: msg.clientSecret, scope: msg.scope || DEFAULT_SCOPE } });
     return { ok: true };
   },
+  // Store tokens obtained by the panel via chrome.identity.launchWebAuthFlow (the device
+  // flow can't request Drive scopes). getToken() then refreshes them with the stored config.
+  "drive-set-tokens": async (msg) => {
+    const t = msg.tokens || {};
+    await setTokens({ access_token: t.access_token, refresh_token: t.refresh_token, expiry: Date.now() + (t.expires_in || 3600) * 1000 });
+    return { ok: true };
+  },
   "drive-auth-start": async () => ({ ok: true, ...(await authStart()) }),
   "drive-disconnect": async () => { await chrome.storage.local.remove("driveTokens"); return { ok: true }; },
 
